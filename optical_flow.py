@@ -38,6 +38,13 @@ def optical_flow_tracking(ROI, video_path):
         good_new = p1[st == 1]
         good_old = p0[st == 1]
 
+        # Compute the average optical flow
+        dx = np.mean(good_new[:, 0] - good_old[:, 0])
+        dy = np.mean(good_new[:, 1] - good_old[:, 1])
+        if abs(dx) > 1.0 or abs(dy) > 1.0:
+            print('Camera motion detected')
+            print(f'Camera motion: dx={dx}, dy={dy}')
+
         # Draw the tracks
         for i, (new, old) in enumerate(zip(good_new, good_old)):
             a, b = new.ravel()
