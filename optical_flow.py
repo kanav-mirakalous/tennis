@@ -4,7 +4,7 @@ import numpy as np
 def optical_flow_tracking(ROI, video_path):
     """take ROI from YOLO for corners and then track them using optical flow
     For added robustness we also use Shi-Tomasi corner detection to detect new corners within ROI
-    ROI is a list of 4 values: x, y, w, h"""
+    ROI is a list of 4 values: x, y, w, h. current implementation is for entire image"""
     # Parameters for ShiTomasi corner detection
     feature_params = dict(maxCorners=10, qualityLevel=0.3, minDistance=3, blockSize=3)
 
@@ -16,11 +16,11 @@ def optical_flow_tracking(ROI, video_path):
 
     # Take first frame and find corners in it
     ret, old_frame = cap.read()
-    old_frame_roi = old_frame[ROI[1]:ROI[1]+ROI[3], ROI[0]:ROI[0]+ROI[2]]
+    old_frame_roi = old_frame #[ROI[1]:ROI[1]+ROI[3], ROI[0]:ROI[0]+ROI[2]]
     old_gray = cv2.cvtColor(old_frame_roi, cv2.COLOR_BGR2GRAY)
     p0 = cv2.goodFeaturesToTrack(old_gray, mask=None, **feature_params)
 
-    # Create a mask image for drawing purposes
+    # Create a mask image for drawing purposes.
     mask = np.zeros_like(old_frame)
 
     while True:
@@ -42,6 +42,11 @@ def optical_flow_tracking(ROI, video_path):
         for i, (new, old) in enumerate(zip(good_new, good_old)):
             a, b = new.ravel()
             c, d = old.ravel()
+            print(type(a), type(b), type(c), type(d))
+            a =int(a)
+            b = int(b)
+            c = int(c)
+            d = int(d)
             mask = cv2.line(mask, (a, b), (c, d), (0, 255, 0), 2)
             frame = cv2.circle(frame, (a, b), 5, (0, 0, 255), -1)
         img = cv2.add(frame, mask)
@@ -57,3 +62,5 @@ def optical_flow_tracking(ROI, video_path):
 
     cv2.destroyAllWindows()
     cap.release()
+
+optical_flow_tracking([400, 300, 500, 400], 'images/AO.RodLaverArena1.mp4')
