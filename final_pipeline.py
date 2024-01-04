@@ -5,6 +5,7 @@
 from ultralytics import YOLO
 import cv2
 import numpy as np
+from optical_flow import optical_flow_tracking_frames
 
 #step 1 get the yolo model
 # Load a model
@@ -16,10 +17,15 @@ cap = cv2.VideoCapture('images/AO.RodLaverArena1.mp4')
 # Initialize dictionaries for corners and poles
 corners = {'upper_left': [], 'upper_right': [], 'lower_left': [], 'lower_right': []}
 poles = {'left': [], 'right': []}
-
+# Initialize previous frame
+prev_frame = None
 while True:
     # Read frame from video
     ret, frame = cap.read()
+
+    # If the previous frame is not None, calculate optical flow
+    if prev_frame is not None:
+        dx, dy, _ = optical_flow_tracking_frames(prev_frame, frame)
 
     # Break the loop if the video is over
     if not ret:
@@ -33,6 +39,7 @@ while True:
         # Get the center of the bounding box
         center_x = (result.xmin + result.xmax) / 2
         center_y = (result.ymin + result.ymax) / 2
+
 
         # Check if the center is in the left or right half of the frame
         side = 'left' if center_x < frame.shape[1] / 2 else 'right'
@@ -48,9 +55,16 @@ while True:
             corners[quadrant].append(result)
         elif result.label == 'pole':
             poles[side].append(result)
+    
+    # If dx or dy is more than 1, update the corners and poles
+    if abs(dx) > 1 or abs(dy) > 1:
+        for corner in corners:
+            corners[corner] = (corners[corner][0] + dx, corners[corner][1] + dy)
+
+        for pole in poles:
+            poles[pole] = (poles[pole][0] + dx, poles[pole][1] + dy)
     print(f"the corners are {corners}")
     print(f"the poles are {poles}")
-
     #reference on corrected frame
     corrected_frame = None
 
@@ -177,5 +191,6 @@ while True:
     print(f'Camera position: {camera_position}')
     print(f'Camera rotation: {camera_rotation}')
     print(f'Camera Euler angles: {euler_angles}')
+    prev_frame = frame
 
 cap.release()

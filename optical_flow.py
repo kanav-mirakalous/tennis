@@ -1,7 +1,25 @@
 import cv2
 import numpy as np
 
-def optical_flow_tracking(ROI, video_path):
+def find_euler_angles(rotation_vector):
+    # Convert the rotation vector to a rotation matrix
+    rotation_matrix, _ = cv2.Rodrigues(rotation_vector[0])
+
+    # Convert the rotation matrix to Euler angles
+    sy = np.sqrt(rotation_matrix[0, 0] * rotation_matrix[0, 0] +  rotation_matrix[1, 0] * rotation_matrix[1, 0])
+    singular = sy < 1e-6
+
+    if not singular:
+        x = np.arctan2(rotation_matrix[2, 1] , rotation_matrix[2, 2])
+        y = np.arctan2(-rotation_matrix[2, 0], sy)
+        z = np.arctan2(rotation_matrix[1, 0], rotation_matrix[0, 0])
+    else:
+        x = np.arctan2(-rotation_matrix[1, 2], rotation_matrix[1, 1])
+        y = np.arctan2(-rotation_matrix[2, 0], sy)
+        z = 0
+    return np.array([x, y, z])
+
+def optical_flow_tracking(ROI, video_path, show=False):
     """take ROI from YOLO for corners and then track them using optical flow
     For added robustness we also use Shi-Tomasi corner detection to detect new corners within ROI
     ROI is a list of 4 values: x, y, w, h. current implementation is for entire image"""
@@ -44,30 +62,75 @@ def optical_flow_tracking(ROI, video_path):
         if abs(dx) > 1.0 or abs(dy) > 1.0:
             print('Camera motion detected')
             print(f'Camera motion: dx={dx}, dy={dy}')
+        camera_movement=[dx, dy]
+        
+        # Compute the homography from the old points to the new points
+        h, status = cv2.findHomography(good_old, good_new)
+        K = np.eye(3)
+        # Decompose the homography into rotation and translation components
+        _, _, _, decomposed_rotation_vectors = cv2.decomposeHomographyMat(h, K)
+        
+        
+        rotation_values=find_euler_angles(decomposed_rotation_vectors)
+        print(f'Rotation values in radians (roll, pitch and yaw): {rotation_values}')
 
-        # Draw the tracks
-        for i, (new, old) in enumerate(zip(good_new, good_old)):
-            a, b = new.ravel()
-            c, d = old.ravel()
-            print(type(a), type(b), type(c), type(d))
-            a =int(a)
-            b = int(b)
-            c = int(c)
-            d = int(d)
-            mask = cv2.line(mask, (a, b), (c, d), (0, 255, 0), 2)
-            frame = cv2.circle(frame, (a, b), 5, (0, 0, 255), -1)
-        img = cv2.add(frame, mask)
+        if show is True:
+            # Draw the tracks
+            for i, (new, old) in enumerate(zip(good_new, good_old)):
+                a, b = new.ravel()
+                c, d = old.ravel()
+                a =int(a)
+                b = int(b)
+                c = int(c)
+                d = int(d)
+                mask = cv2.line(mask, (a, b), (c, d), (0, 255, 0), 2)
+                frame = cv2.circle(frame, (a, b), 5, (0, 0, 255), -1)
+            img = cv2.add(frame, mask)
 
-        cv2.imshow('frame', img)
-        k = cv2.waitKey(30) & 0xff
-        if k == 27:
-            break
+            cv2.imshow('frame', img)
+            k = cv2.waitKey(30) & 0xff
+            if k == 27:
+                break
 
         # Update the previous frame and previous points
         old_gray = frame_gray.copy()
         p0 = good_new.reshape(-1, 1, 2)
-
-    cv2.destroyAllWindows()
+        return rotation_values, camera_movement
+    if show is True:
+        cv2.destroyAllWindows()
     cap.release()
+    return -1, -1
 
-optical_flow_tracking([400, 300, 500, 400], 'images/AO.RodLaverArena1.mp4')
+def optical_flow_tracking_frames(frame1, frame2):
+    # Convert the frames to grayscale
+    gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
+    gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
+
+    # Detect Shi-Tomasi corners in the first frame
+    corners = cv2.goodFeaturesToTrack(gray1, mask=None, maxCorners=100, qualityLevel=0.3, minDistance=7, blockSize=7)
+
+    # Calculate optical flow
+    p1, st, err = cv2.calcOpticalFlowPyrLK(gray1, gray2, corners, None, winSize=(15,15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+
+    # Select good points
+    good_new = p1[st==1]
+    good_old = corners[st==1]
+
+    # Compute the movement in x and y direction
+    dx = np.mean(good_new[:,0] - good_old[:,0])
+    dy = np.mean(good_new[:,1] - good_old[:,1])
+
+    # Find the homography
+    H, _ = cv2.findHomography(good_old, good_new)
+
+    # Decompose the homography into the camera matrix, rotation and translation vectors
+    _, _, euler_angles = cv2.RQDecomp3x3(H[:3, :3])
+
+    # Convert the Euler angles to radians
+    euler_angles = [np.deg2rad(angle) for angle in euler_angles]
+
+    return dx, dy, euler_angles
+
+if __name__ == "__main__":
+    optical_flow_tracking([400, 300, 500, 400], 'images/AO.RodLaverArena1.mp4')
+
