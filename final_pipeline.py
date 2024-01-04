@@ -19,6 +19,9 @@ corners = {'upper_left': [], 'upper_right': [], 'lower_left': [], 'lower_right':
 poles = {'left': [], 'right': []}
 # Initialize previous frame
 prev_frame = None
+# Initialize previous corners and poles
+prev_corners = None
+prev_poles = None
 while True:
     # Read frame from video
     ret, frame = cap.read()
@@ -58,11 +61,15 @@ while True:
     
     # If dx or dy is more than 1, update the corners and poles
     if abs(dx) > 1 or abs(dy) > 1:
-        for corner in corners:
-            corners[corner] = (corners[corner][0] + dx, corners[corner][1] + dy)
+            for corner in prev_corners:
+                # If the corner was not detected in the current frame, use the previous frame's value
+                if corner not in corners:
+                    corners[corner] = (prev_corners[corner][0] + dx, prev_corners[corner][1] + dy)
 
-        for pole in poles:
-            poles[pole] = (poles[pole][0] + dx, poles[pole][1] + dy)
+            for pole in prev_poles:
+                # If the pole was not detected in the current frame, use the previous frame's value
+                if pole not in poles:
+                    poles[pole] = (prev_poles[pole][0] + dx, prev_poles[pole][1] + dy)
     print(f"the corners are {corners}")
     print(f"the poles are {poles}")
     #reference on corrected frame
