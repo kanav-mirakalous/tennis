@@ -19,7 +19,7 @@ def find_euler_angles(rotation_vector):
         z = 0
     return np.array([x, y, z])
 
-def optical_flow_tracking(ROI, video_path, show=False):
+def optical_flow_tracking(ROI, video_path, show=True):
     """take ROI from YOLO for corners and then track them using optical flow
     For added robustness we also use Shi-Tomasi corner detection to detect new corners within ROI
     ROI is a list of 4 values: x, y, w, h. current implementation is for entire image"""
@@ -74,32 +74,66 @@ def optical_flow_tracking(ROI, video_path, show=False):
         rotation_values=find_euler_angles(decomposed_rotation_vectors)
         print(f'Rotation values in radians (roll, pitch and yaw): {rotation_values}')
 
-        if show is True:
-            # Draw the tracks
-            for i, (new, old) in enumerate(zip(good_new, good_old)):
-                a, b = new.ravel()
-                c, d = old.ravel()
-                a =int(a)
-                b = int(b)
-                c = int(c)
-                d = int(d)
-                mask = cv2.line(mask, (a, b), (c, d), (0, 255, 0), 2)
-                frame = cv2.circle(frame, (a, b), 5, (0, 0, 255), -1)
-            img = cv2.add(frame, mask)
-
-            cv2.imshow('frame', img)
-            k = cv2.waitKey(30) & 0xff
-            if k == 27:
-                break
+        
+        # Draw the tracks
+        for i, (new, old) in enumerate(zip(good_new, good_old)):
+            a, b = new.ravel()
+            c, d = old.ravel()
+            a =int(a)
+            b = int(b)
+            c = int(c)
+            d = int(d)
+            mask = cv2.line(mask, (a, b), (c, d), (0, 255, 0), 2)
+            frame = cv2.circle(frame, (a, b), 5, (0, 0, 255), -1)
+        img = cv2.add(frame, mask)
+        cv2.imshow('frame', img)
+        cv2.waitKey(0)
+        # k = cv2.waitKey(30) & 0xff
+        # if k == 27:
+        #     break
 
         # Update the previous frame and previous points
         old_gray = frame_gray.copy()
         p0 = good_new.reshape(-1, 1, 2)
         return rotation_values, camera_movement
-    if show is True:
+    
         cv2.destroyAllWindows()
     cap.release()
     return -1, -1
+
+def optical_flow_tracking_images(image1, image2):
+    # Convert the images to grayscale
+    gray1 = cv2.cvtColor(image1, cv2.COLOR_BGR2GRAY)
+    gray2 = cv2.cvtColor(image2, cv2.COLOR_BGR2GRAY)
+
+    # Parameters for ShiTomasi corner detection
+    feature_params = dict(maxCorners=10, qualityLevel=0.3, minDistance=3, blockSize=3)
+
+    # Parameters for Lucas-Kanade optical flow
+    lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+
+    # Detect corners in the first image
+    p0 = cv2.goodFeaturesToTrack(gray1, mask=None, **feature_params)
+
+    # Calculate optical flow
+    p1, st, err = cv2.calcOpticalFlowPyrLK(gray1, gray2, p0, None, **lk_params)
+
+    # Select good points
+    good_new = p1[st==1]
+    good_old = p0[st==1]
+
+    # Draw the tracks
+    for i, (new, old) in enumerate(zip(good_new, good_old)):
+        a, b = new.ravel()
+        c, d = old.ravel()
+        mask = cv2.line(mask, (a, b), (c, d), color[i].tolist(), 2)
+        frame = cv2.circle(frame, (a, b), 5, color[i].tolist(), -1)
+    img = cv2.add(frame, mask)
+
+    dx = np.mean(good_new[:,0] - good_old[:,0])
+    dy = np.mean(good_new[:,1] - good_old[:,1])
+
+    return dx, dy
 
 def optical_flow_tracking_frames(frame1, frame2):
     # Convert the frames to grayscale
@@ -107,7 +141,7 @@ def optical_flow_tracking_frames(frame1, frame2):
     gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
 
     # Detect Shi-Tomasi corners in the first frame
-    corners = cv2.goodFeaturesToTrack(gray1, mask=None, maxCorners=100, qualityLevel=0.3, minDistance=7, blockSize=7)
+    corners = cv2.goodFeaturesToTrack(gray1, mask=None, maxCorners=10, qualityLevel=0.3, minDistance=7, blockSize=7)
 
     # Calculate optical flow
     p1, st, err = cv2.calcOpticalFlowPyrLK(gray1, gray2, corners, None, winSize=(15,15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
@@ -124,7 +158,7 @@ def optical_flow_tracking_frames(frame1, frame2):
     H, _ = cv2.findHomography(good_old, good_new)
 
     # Decompose the homography into the camera matrix, rotation and translation vectors
-    _, _, euler_angles = cv2.RQDecomp3x3(H[:3, :3])
+    _, _, _,_,_, euler_angles = cv2.RQDecomp3x3(H[:3, :3])
 
     # Convert the Euler angles to radians
     euler_angles = [np.deg2rad(angle) for angle in euler_angles]
@@ -132,5 +166,31 @@ def optical_flow_tracking_frames(frame1, frame2):
     return dx, dy, euler_angles
 
 if __name__ == "__main__":
-    optical_flow_tracking([400, 300, 500, 400], 'images/AO.RodLaverArena1.mp4')
+
+    #optical_flow_tracking([400, 300, 500, 400], 'images/AO.RodLaverArena1.mp4')
+    video_path = "images/AO.RodLaverArena1.mp4"
+
+    # Open the video file
+    cap = cv2.VideoCapture(video_path)
+
+    # Read the first frame
+    ret, frame1 = cap.read()
+
+    while True:
+        # Read the next frame
+        ret, frame2 = cap.read()
+
+        # Break the loop if we reached the end of the video
+        if not ret:
+            break
+
+        # Call the function
+        DX,DY,EA=optical_flow_tracking_frames(frame1, frame2)
+        print(f'DX={DX}, DY={DY}, EA={EA}')
+
+        # Update frame1 for the next iteration
+        frame1 = frame2
+
+    # Release the video file
+    cap.release()
 
